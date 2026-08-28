@@ -11,7 +11,7 @@
 <style>
 :root{
   --bg:#f3efe8; --surface:#fff; --ink:#241c18; --muted:#776b62;
-  --primary:#c1440e; --primary-dark:#D06800; --gold:#e8a33d;
+  --primary:#c1440e; --primary-dark:#8c2f08; --gold:#e8a33d;
   --soft:#f4dcc9; --border:#e5dcd0; --green:#4c8c5b;
   --shadow:0 8px 25px rgba(36,28,24,.08); --radius:16px;
 }
@@ -101,6 +101,20 @@ td.num{text-align:right;font-family:monospace;font-weight:700}
 
 .empty{padding:35px;text-align:center;color:var(--muted);font-size:12px;background:#fff;border:1px dashed var(--border);border-radius:12px}
 
+.restricted-screen{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:100vh;padding:20px;text-align:center;background:var(--bg)
+}
+.restricted-card{
+  background:#fff;padding:40px;border-radius:var(--radius);
+  border:1px solid var(--border);box-shadow:var(--shadow);max-width:400px;width:100%
+}
+.restricted-card h2{color:var(--primary);margin-top:0}
+.restricted-card button{
+  margin-top:15px;background:var(--primary);color:#fff;border:0;
+  padding:10px 18px;border-radius:8px;font-weight:800;cursor:pointer
+}
+
 @media(max-width:1050px){
  .feature-grid{grid-template-columns:1fr 1fr}.kpis{grid-template-columns:repeat(3,1fr)}
  .charts-grid{grid-template-columns:1fr}
@@ -113,7 +127,7 @@ td.num{text-align:right;font-family:monospace;font-weight:700}
 </head>
 
 <body>
-<div class="app">
+<div class="app" id="appContent">
 <header class="header">
   <div>
     <h1>Monitoreo diario de redes sociales</h1>
@@ -193,6 +207,9 @@ td.num{text-align:right;font-family:monospace;font-weight:700}
 </div>
 
 <script>
+// CONFIGURACIÓN DE SEGURIDAD
+const CLAVE_ACCESO = "Igualdad2026"; // <-- Modifica tu contraseña aquí
+
 let DATA = { resumen:{}, publicaciones:[], cuentas:[], destacadas:[] };
 let IMAGES = {};
 let chartInstances = {};
@@ -216,7 +233,6 @@ function parseDate(x){
   if(typeof x === 'number') return new Date((x - 25569) * 86400 * 1000);
   if(typeof x === 'string'){
     const cleanStr = x.trim();
-    // Soporte para formato latino DD/MM/YYYY
     const latParts = cleanStr.split('/');
     if(latParts.length === 3 && latParts[2].length === 4){
       return new Date(latParts[2], latParts[1] - 1, latParts[0]);
@@ -243,7 +259,27 @@ function keyAccount(s){
   return 'secretaria';
 }
 
+function solicitarAcceso() {
+  const claveIngresada = prompt("Ingrese la clave de acceso al tablero:");
+  
+  if (claveIngresada !== CLAVE_ACCESO) {
+    document.body.innerHTML = `
+      <div class="restricted-screen">
+        <div class="restricted-card">
+          <h2>Acceso Restringido</h2>
+          <p>Contraseña incorrecta. No tienes permiso para acceder a este informe.</p>
+          <button onclick="location.reload()">Reintentar</button>
+        </div>
+      </div>`;
+    return false;
+  }
+  return true;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
+  // Validación de acceso
+  if (!solicitarAcceso()) return;
+
   try {
     const res = await fetch('Redes.xlsx?v=' + new Date().getTime());
     if (res.ok) {
@@ -255,7 +291,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       DATA.resumen = {};
 
       if (resSheet.length > 0) {
-        // Detecta automáticamente si el Excel es vertical (Campo/Texto) o de 1 sola fila con encabezados
         if (resSheet[0]['Campo'] !== undefined || resSheet[0]['campo'] !== undefined) {
           resSheet.forEach(r => {
             const fieldKey = val(r, ['Campo', 'campo']);
@@ -392,14 +427,14 @@ function renderCharts(){
           {
             label: 'Publicaciones',
             data: [fbPosts, igPosts],
-            backgroundColor: '#ff8100',
+            backgroundColor: '#e8a33d',
             yAxisID: 'yPubs',
             borderRadius: 6
           },
           {
             label: 'Reacciones',
             data: [fbReactions, igReactions],
-            backgroundColor: '#B45A00',
+            backgroundColor: '#1877F2',
             yAxisID: 'yReac',
             borderRadius: 6
           }
