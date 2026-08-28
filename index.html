@@ -6,7 +6,6 @@
 <title>Monitoreo diario de redes sociales</title>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<!-- Se añade Chart.js para los gráficos de barras -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
@@ -146,7 +145,7 @@ td.num{text-align:right;font-family:monospace;font-weight:700}
 
   <div class="section-head">
     <h2>Publicaciones y Reacciones por Red Social</h2>
-    <span>Comparativa de rendimiento entre redes para cada cuenta</span>
+    <span>Comparativa de rendimiento con escalas independientes</span>
   </div>
   <div class="charts-grid">
     <div class="chart-card">
@@ -199,18 +198,17 @@ let IMAGES = {};
 let chartInstances = {};
 
 const fmt = n => new Intl.NumberFormat('es-MX').format(Number(n)||0);
+const norm = s => String(s ?? '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+
 const val = (obj, names) => {
   if(!obj) return '';
   for(const n of names){
     if(obj[n] !== undefined && obj[n] !== null && obj[n] !== '') return obj[n];
-    // Coincidencia insensible a mayúsculas/minúsculas y acentos
     const key = Object.keys(obj).find(k => norm(k) === norm(n));
     if(key && obj[key] !== undefined && obj[key] !== null && obj[key] !== '') return obj[key];
   }
   return '';
 };
-const norm = s => String(s ?? '').trim().toLowerCase()
-  .normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 
 function parseDate(x){
   if(!x) return null;
@@ -218,9 +216,14 @@ function parseDate(x){
   if(typeof x === 'number') return new Date((x - 25569) * 86400 * 1000);
   if(typeof x === 'string'){
     const cleanStr = x.trim();
-    const parts = cleanStr.split(/[-/]/);
-    if(parts.length === 3 && parts[0].length === 4){
-      return new Date(parts[0], parts[1] - 1, parts[2]);
+    // Soporte para formato latino DD/MM/YYYY
+    const latParts = cleanStr.split('/');
+    if(latParts.length === 3 && latParts[2].length === 4){
+      return new Date(latParts[2], latParts[1] - 1, latParts[0]);
+    }
+    const isoParts = cleanStr.split('-');
+    if(isoParts.length === 3 && isoParts[0].length === 4){
+      return new Date(isoParts[0], isoParts[1] - 1, isoParts[2]);
     }
     const d = new Date(cleanStr);
     return isNaN(d) ? null : d;
@@ -250,11 +253,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       
       const resSheet = sheet('01_Resumen');
       DATA.resumen = {};
-      resSheet.forEach(r => {
-        const fieldKey = val(r, ['Campo', 'campo']);
-        const textVal = val(r, ['Texto', 'texto', 'Valor', 'valor']);
-        if(fieldKey) DATA.resumen[fieldKey] = textVal;
-      });
+
+      if (resSheet.length > 0) {
+        // Detecta automáticamente si el Excel es vertical (Campo/Texto) o de 1 sola fila con encabezados
+        if (resSheet[0]['Campo'] !== undefined || resSheet[0]['campo'] !== undefined) {
+          resSheet.forEach(r => {
+            const fieldKey = val(r, ['Campo', 'campo']);
+            const textVal = val(r, ['Texto', 'texto', 'Valor', 'valor']);
+            if(fieldKey) DATA.resumen[fieldKey] = textVal;
+          });
+        } else {
+          DATA.resumen = resSheet[0];
+        }
+      }
       
       DATA.publicaciones = sheet('02_Publicaciones');
       DATA.cuentas = sheet('03_Cuentas');
@@ -290,8 +301,8 @@ function renderAll(){
 
 function renderHeader(){
   const r = DATA.resumen;
-  const report = val(r, ['Fecha_reporte', 'fecha_reporte', 'Fecha Reporte']);
-  const upd = val(r, ['Fecha_actualización', 'Fecha_actualizacion', 'fecha_actualizacion', 'Fecha Actualización']);
+  const report = val(r, ['fecha_reporte', 'Fecha_reporte', 'Fecha Reporte']);
+  const upd = val(r, ['fecha_actualizacion', 'Fecha_actualizacion', 'Fecha_actualización', 'Fecha Actualización']);
   
   document.getElementById('reportDate').textContent = report ? dateText(report) : 'Reporte diario';
   document.getElementById('cutDate').textContent = 'Corte de estadísticas: ' + (upd ? dateText(upd) : '—');
@@ -376,18 +387,20 @@ function renderCharts(){
     chartInstances[canvasId] = new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: ['Publicaciones', 'Reacciones'],
+        labels: ['Facebook', 'Instagram'],
         datasets: [
           {
-            label: 'Facebook',
-            data: [fbPosts, fbReactions],
-            backgroundColor: '#1877F2',
+            label: 'Publicaciones',
+            data: [fbPosts, igPosts],
+            backgroundColor: '#e8a33d',
+            yAxisID: 'yPubs',
             borderRadius: 6
           },
           {
-            label: 'Instagram',
-            data: [igPosts, igReactions],
-            backgroundColor: '#E4405F',
+            label: 'Reacciones',
+            data: [fbReactions, igReactions],
+            backgroundColor: '#1877F2',
+            yAxisID: 'yReac',
             borderRadius: 6
           }
         ]
@@ -399,13 +412,27 @@ function renderCharts(){
           tooltip: {
             callbacks: {
               label: function(context) {
-                let value = context.raw || 0;
-                return `${context.dataset.label}: ${fmt(value)}`;
+                return `${context.dataset.label}: ${fmt(context.raw)}`;
               }
             }
           }
         },
-        scales: { y: { beginAtZero: true } }
+        scales: {
+          yPubs: {
+            type: 'linear',
+            position: 'left',
+            beginAtZero: true,
+            title: { display: true, text: 'Publicaciones', font: { size: 10, weight: 'bold' } },
+            ticks: { precision: 0 }
+          },
+          yReac: {
+            type: 'linear',
+            position: 'right',
+            beginAtZero: true,
+            title: { display: true, text: 'Reacciones', font: { size: 10, weight: 'bold' } },
+            grid: { drawOnChartArea: false }
+          }
+        }
       }
     });
   });
