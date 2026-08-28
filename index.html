@@ -37,12 +37,10 @@ button,input{font:inherit}
   justify-content:space-between;gap:15px;margin-bottom:22px;flex-wrap:wrap
 }
 .toolbar-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.file-label,.btn{
-  border:0;border-radius:9px;padding:9px 14px;font-size:12px;font-weight:800;cursor:pointer
+.btn{
+  border:0;border-radius:9px;padding:9px 14px;font-size:12px;font-weight:800;cursor:pointer;
+  background:#f2ece5;color:var(--ink)
 }
-.file-label{background:var(--primary);color:#fff}
-.btn{background:#f2ece5;color:var(--ink)}
-input[type=file]{display:none}
 .status{font-size:12px;color:var(--muted)}
 .status strong{color:var(--green)}
 
@@ -72,7 +70,6 @@ input[type=file]{display:none}
 .kpi .label{font-size:10px;color:var(--muted);text-transform:uppercase;font-weight:800;letter-spacing:.4px}
 .kpi .value{font-family:monospace;font-size:23px;font-weight:800;margin-top:8px}
 
-/* Estilos para contenedores de gráficos */
 .charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:15px}
 .chart-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow)}
 .chart-card h3{margin:0 0 15px 0;font-size:14px;color:var(--ink)}
@@ -133,17 +130,9 @@ td.num{text-align:right;font-family:monospace;font-weight:700}
 
   <div class="toolbar">
     <div class="toolbar-left">
-      <label class="file-label">
-        📊 Cargar Redes.xlsx
-        <input id="excelFile" type="file" accept=".xlsx,.xls">
-      </label>
-      <label class="btn">
-        🖼️ Cargar imágenes
-        <input id="imageFiles" type="file" accept="image/*" multiple>
-      </label>
       <button class="btn" onclick="window.print()">🖨️ Imprimir / PDF</button>
     </div>
-    <div class="status" id="status">Cargando datos automáticamente…</div>
+    <div class="status" id="status">Cargando datos…</div>
   </div>
 
   <div class="section-head">
@@ -155,7 +144,6 @@ td.num{text-align:right;font-family:monospace;font-weight:700}
     <section class="person" id="felix"></section>
   </div>
 
-  <!-- Sección de Gráficos -->
   <div class="section-head">
     <h2>Publicaciones y Reacciones por Red Social</h2>
     <span>Comparativa de rendimiento entre redes para cada cuenta</span>
@@ -212,8 +200,12 @@ let chartInstances = {};
 
 const fmt = n => new Intl.NumberFormat('es-MX').format(Number(n)||0);
 const val = (obj, names) => {
+  if(!obj) return '';
   for(const n of names){
-    if(obj && obj[n] !== undefined && obj[n] !== null && obj[n] !== '') return obj[n];
+    if(obj[n] !== undefined && obj[n] !== null && obj[n] !== '') return obj[n];
+    // Coincidencia insensible a mayúsculas/minúsculas y acentos
+    const key = Object.keys(obj).find(k => norm(k) === norm(n));
+    if(key && obj[key] !== undefined && obj[key] !== null && obj[key] !== '') return obj[key];
   }
   return '';
 };
@@ -221,33 +213,48 @@ const norm = s => String(s ?? '').trim().toLowerCase()
   .normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 
 function parseDate(x){
+  if(!x) return null;
   if(x instanceof Date) return x;
-  if(typeof x === 'number') return new Date((x-25569)*86400*1000);
-  const d = new Date(x);
-  return isNaN(d) ? null : d;
+  if(typeof x === 'number') return new Date((x - 25569) * 86400 * 1000);
+  if(typeof x === 'string'){
+    const cleanStr = x.trim();
+    const parts = cleanStr.split(/[-/]/);
+    if(parts.length === 3 && parts[0].length === 4){
+      return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+    const d = new Date(cleanStr);
+    return isNaN(d) ? null : d;
+  }
+  return null;
 }
+
 function dateText(x){
-  const d=parseDate(x); if(!d) return x||'—';
-  return d.toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'});
+  const d = parseDate(x);
+  if(!d) return x || '—';
+  return d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
 }
+
 function keyAccount(s){
-  const n=norm(s);
+  const n = norm(s);
   if(n.includes('felix')) return 'felix';
   return 'secretaria';
 }
 
-// Carga automática al abrir la página
 document.addEventListener('DOMContentLoaded', async () => {
   try {
-    const res = await fetch('Redes.xlsx');
+    const res = await fetch('Redes.xlsx?v=' + new Date().getTime());
     if (res.ok) {
       const buf = await res.arrayBuffer();
-      const wb = XLSX.read(buf, { type: 'array', cellDates: true });
-      const sheet = (name) => wb.Sheets[name] ? XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' }) : [];
+      const wb = XLSX.read(buf, { type: 'array', cellDates: true, cellNF: false, cellText: false });
+      const sheet = (name) => wb.Sheets[name] ? XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '', raw: false }) : [];
       
       const resSheet = sheet('01_Resumen');
       DATA.resumen = {};
-      resSheet.forEach(r => { if(r.Campo) DATA.resumen[r.Campo] = r.Texto; });
+      resSheet.forEach(r => {
+        const fieldKey = val(r, ['Campo', 'campo']);
+        const textVal = val(r, ['Texto', 'texto', 'Valor', 'valor']);
+        if(fieldKey) DATA.resumen[fieldKey] = textVal;
+      });
       
       DATA.publicaciones = sheet('02_Publicaciones');
       DATA.cuentas = sheet('03_Cuentas');
@@ -261,12 +268,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         if(imgName) IMAGES[imgName] = `imagenes/${imgName}`;
       });
 
-      document.getElementById('status').innerHTML = '<strong>✓ Datos cargados automáticamente</strong>';
+      document.getElementById('status').innerHTML = '<strong>✓ Datos actualizados</strong>';
       renderAll();
+    } else {
+      document.getElementById('status').textContent = 'No se encontró el archivo Redes.xlsx';
     }
   } catch (err) {
-    console.log('No se cargó automáticamente, listo para carga manual:', err);
-    document.getElementById('status').textContent = 'Esperando archivo…';
+    console.error('Error al cargar datos automáticos:', err);
+    document.getElementById('status').textContent = 'Error al cargar los datos';
   }
 });
 
@@ -280,46 +289,46 @@ function renderAll(){
 }
 
 function renderHeader(){
-  const r=DATA.resumen;
-  const report=val(r,['Fecha_reporte','fecha_reporte','Fecha Reporte']);
-  const upd=val(r,['Fecha_actualización','Fecha_actualizacion','fecha_actualizacion']);
+  const r = DATA.resumen;
+  const report = val(r, ['Fecha_reporte', 'fecha_reporte', 'Fecha Reporte']);
+  const upd = val(r, ['Fecha_actualización', 'Fecha_actualizacion', 'fecha_actualizacion', 'Fecha Actualización']);
+  
   document.getElementById('reportDate').textContent = report ? dateText(report) : 'Reporte diario';
-  document.getElementById('cutDate').textContent =
-    'Corte de estadísticas: ' + (upd ? dateText(upd) : 'fecha indicada en el archivo');
+  document.getElementById('cutDate').textContent = 'Corte de estadísticas: ' + (upd ? dateText(upd) : '—');
 }
 
 function accountRows(which){
-  return DATA.cuentas.filter(x=>keyAccount(val(x,['Cuenta','cuenta']))===which);
+  return DATA.cuentas.filter(x => keyAccount(val(x, ['Cuenta', 'cuenta'])) === which);
 }
 function publicationRows(which){
-  return DATA.publicaciones.filter(x=>keyAccount(val(x,['cuenta','Cuenta']))===which);
+  return DATA.publicaciones.filter(x => keyAccount(val(x, ['cuenta', 'Cuenta'])) === which);
 }
 function sum(rows, names){
-  return rows.reduce((a,r)=>a+(Number(val(r,names))||0),0);
+  return rows.reduce((a, r) => a + (Number(val(r, names)) || 0), 0);
 }
 
-function renderPerson(which,title,defaultImage){
-  const el=document.getElementById(which);
-  const rows=accountRows(which);
-  const pubs=publicationRows(which);
-  const followers=sum(rows,['Seguidores','seguidores']);
-  const posts=pubs.length;
-  const reactions=sum(pubs,['reacciones','Reacciones']);
-  const comments=sum(pubs,['comentarios','Comentarios']);
-  const reposts=sum(pubs,['reposts','Reposts','compartidos','Compartidos']);
-  const views=sum(pubs,['visualizaciones','Visualizaciones']);
+function renderPerson(which, title, defaultImage){
+  const el = document.getElementById(which);
+  const rows = accountRows(which);
+  const pubs = publicationRows(which);
+  const followers = sum(rows, ['Seguidores', 'seguidores']);
+  const posts = pubs.length;
+  const reactions = sum(pubs, ['reacciones', 'Reacciones']);
+  const comments = sum(pubs, ['comentarios', 'Comentarios']);
+  const reposts = sum(pubs, ['reposts', 'Reposts', 'compartidos', 'Compartidos']);
+  const views = sum(pubs, ['visualizaciones', 'Visualizaciones']);
 
   const img = IMAGES[defaultImage] || '';
-  const platforms = rows.length ? rows.map(r=>{
-    const red=val(r,['Red','red'])||'Red';
+  const platforms = rows.length ? rows.map(r => {
+    const red = val(r, ['Red', 'red']) || 'Red';
     return `<div class="platform">
       <b>${red}</b>
-      <div class="n">${fmt(val(r,['Seguidores','seguidores']))}</div>
+      <div class="n">${fmt(val(r, ['Seguidores', 'seguidores']))}</div>
       <small>seguidores</small>
     </div>`;
   }).join('') : '<div class="platform"><b>Sin datos</b><div class="n">—</div></div>';
 
-  el.innerHTML=`
+  el.innerHTML = `
     <div class="person-top">
       <img class="avatar" src="${img}" onerror="this.style.display='none'">
       <div>
@@ -447,31 +456,31 @@ function renderFeatured(){
 }
 
 function renderActivity(){
-  const body=document.getElementById('activityTable');
-  body.innerHTML='';
+  const body = document.getElementById('activityTable');
+  body.innerHTML = '';
 
   if(!DATA.publicaciones.length){
     body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px;">Sin publicaciones registradas</td></tr>';
     return;
   }
 
-  DATA.publicaciones.forEach(p=>{
-    const cuenta = val(p,['cuenta','Cuenta']) || '—';
-    const red = val(p,['red','Red']) || '—';
-    const tema = val(p,['tema','Tema','texto','Texto']) || 'Sin título';
-    const link = val(p,['enlace','Enlace','link','Link']);
+  DATA.publicaciones.forEach(p => {
+    const cuenta = val(p, ['cuenta', 'Cuenta']) || '—';
+    const red = val(p, ['red', 'Red']) || '—';
+    const tema = val(p, ['tema', 'Tema', 'texto', 'Texto']) || 'Sin título';
+    const link = val(p, ['enlace', 'Enlace', 'link', 'Link']);
 
-    const reacciones = val(p,['reacciones','Reacciones']);
-    const comentarios = val(p,['comentarios','Comentarios']);
-    const reposts = val(p,['reposts','Reposts','compartidos','Compartidos']);
-    const enviados = val(p,['enviados','Enviados']);
-    const visualizaciones = val(p,['visualizaciones','Visualizaciones']);
+    const reacciones = val(p, ['reacciones', 'Reacciones']);
+    const comentarios = val(p, ['comentarios', 'Comentarios']);
+    const reposts = val(p, ['reposts', 'Reposts', 'compartidos', 'Compartidos']);
+    const enviados = val(p, ['enviados', 'Enviados']);
+    const visualizaciones = val(p, ['visualizaciones', 'Visualizaciones']);
 
     const temaHtml = (link && link !== '#') 
       ? `<a class="link-table" href="${link}" target="_blank" title="Abrir publicación original">${escapeHtml(tema)} ↗</a>`
       : escapeHtml(tema);
 
-    body.insertAdjacentHTML('beforeend',`
+    body.insertAdjacentHTML('beforeend', `
       <tr>
         <td class="account">${escapeHtml(cuenta)}</td>
         <td>${escapeHtml(red)}</td>
@@ -486,38 +495,8 @@ function renderActivity(){
 }
 
 function escapeHtml(s){
-  return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+  return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 }
-
-document.getElementById('excelFile').addEventListener('change', async e=>{
-  const file=e.target.files[0]; if(!file)return;
-  try{
-    const buf=await file.arrayBuffer();
-    const wb=XLSX.read(buf,{type:'array',cellDates:true});
-    const sheet=(name)=>wb.Sheets[name] ? XLSX.utils.sheet_to_json(wb.Sheets[name],{defval:''}) : [];
-    
-    const resSheet = sheet('01_Resumen');
-    DATA.resumen = {};
-    resSheet.forEach(r => { if(r.Campo) DATA.resumen[r.Campo] = r.Texto; });
-
-    DATA.publicaciones=sheet('02_Publicaciones');
-    DATA.cuentas=sheet('03_Cuentas');
-    DATA.destacadas=sheet('04_Destacada');
-    document.getElementById('status').innerHTML='<strong>✓ Excel cargado:</strong> '+file.name;
-    renderAll();
-  }catch(err){
-    console.error(err);
-    document.getElementById('status').textContent='Error al leer el Excel: '+err.message;
-  }
-});
-
-document.getElementById('imageFiles').addEventListener('change', e=>{
-  [...e.target.files].forEach(file=>{
-    IMAGES[file.name]=URL.createObjectURL(file);
-  });
-  document.getElementById('status').innerHTML='<strong>✓ Imágenes cargadas:</strong> '+e.target.files.length;
-  renderAll();
-});
 </script>
 </body>
 </html>
