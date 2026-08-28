@@ -1,0 +1,34 @@
+// Carga automática al abrir la página
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    // 1. Cargar el Excel automático
+    const res = await fetch('Redes.xlsx');
+    const buf = await res.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+    
+    const sheet = (name) => wb.Sheets[name] ? XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' }) : [];
+    
+    // 2. Mapear hojas a la estructura global
+    const resSheet = sheet('01_Resumen');
+    DATA.resumen = {};
+    resSheet.forEach(r => { if(r.Campo) DATA.resumen[r.Campo] = r.Texto; });
+    
+    DATA.publicaciones = sheet('02_Publicaciones');
+    DATA.cuentas = sheet('03_Cuentas');
+    DATA.destacadas = sheet('04_Destacada');
+
+    // 3. Registrar rutas locales de imágenes predeterminadas
+    IMAGES['Logo.png'] = 'Logo.png';
+    IMAGES['Felix.png'] = 'Felix.png';
+    
+    // Asignar rutas del directorio de imágenes para publicaciones destacadas
+    DATA.destacadas.forEach(d => {
+      const imgName = val(d, ['archivo_imagen', 'Archivo_imagen']);
+      if(imgName) IMAGES[imgName] = `imagenes/${imgName}`;
+    });
+
+    renderAll();
+  } catch (err) {
+    console.error('Error al cargar datos automáticos:', err);
+  }
+});
